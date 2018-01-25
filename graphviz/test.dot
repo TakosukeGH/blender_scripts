@@ -1,0 +1,33 @@
+graph sample{
+  inose_gumi[label="猪背組"];
+  inose[label="猪背権蔵"];
+  hatoyama[label="鳩山大成"];
+  kumakura[label="熊倉義道"];
+  namerikawa[label="滑皮秀信"];
+  kajio[label="梶尾"];
+  tobita[label="鳶田"];
+  kajima[label="鹿島"];
+
+  jabara_gumi[label="蛇腹組"];
+  yabuhebi_gumi[label="藪蛇組"];
+  habu[label="飯匙倩"];
+  bakugi[label="獏木"];
+  imori[label="井森"];
+  yamori[label="家守"];
+  mogami[label="最上"];
+
+  inose_gumi -- inose[label="初代組長"];
+  inose_gumi -- hatoyama[label="二代目組長"];
+  hatoyama -- kumakura;
+  kumakura -- namerikawa;
+  namerikawa -- kajio;
+  namerikawa -- tobita;
+  inose_gumi -- kajima[label="三代目(死)"];
+
+	jabara_gumi -- yabuhebi_gumi;
+	yabuhebi_gumi -- habu[label="組員"];
+	habu -- bakugi;
+	habu -- imori;
+	habu -- yamori;
+	habu -- mogami;
+}

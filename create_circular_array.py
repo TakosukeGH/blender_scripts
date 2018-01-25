@@ -2,6 +2,7 @@ import bpy
 import io
 import logging
 import math
+import numpy as np
 
 logger = logging.getLogger("circular_array")
 
@@ -39,43 +40,95 @@ class LoggingToTextContext():
 
 class CircularArray():
     selected_object = None
+    selected_objects = None
     base_empty = None
     pivot_empty = None
     array_modifier = None
 
+    index_axis_dict = {0: "x", 1: "y", 2: "z"}
+    axis_index_dict = {v:k for k, v in index_axis_dict.items()}
+
     def __init__(self):
         logger.info("start")
 
-        self.size = 0.1
+        self.size = 0.01
         self.axis = "z"
         self.obj_axis = "x"
+        self.rotation_axis = "x"
         self.angle = 60.0
         self.layers = self.create_layers(0)
-
-        self.rotation = self.get_rotation()
 
         logger.info("end")
 
     def execute(self):
         logger.info("start")
 
+        self.get_layers()
         self.get_selected_object()
         if not self.selected_object:
             return
+        self.get_view_axis()
+        self.get_axis()
+        self.get_rotation_axis()
+        self.set_lock()
         self.add_base_empty()
         self.add_handle_empty()
         self.add_object_empty()
+        self.add_rotation_empty()
         self.add_pivot_empty()
         self.add_constratint()
-        self.add_array_driver()
 
         logger.info("end")
 
+    def get_layers(self):
+        active_layer_index = bpy.context.scene.active_layer
+
+        layer_index = (active_layer_index + 10) % 20
+        self.layers = self.create_layers(layer_index)
+
     def get_selected_object(self):
+        logger.info("start")
         if not bpy.context.object:
             return
         self.selected_object = bpy.context.object
+        self.selected_objects = bpy.context.selected_objects
         self.selected_object_location = self.selected_object.location.copy()
+
+        logger.info("end")
+
+    def get_view_axis(self):
+        lock_location = self.selected_object.lock_location
+        if lock_location[0] == True:
+            self.axis = "x"
+        elif lock_location[1] == True:
+            self.axis = "y"
+        else:
+            self.axis = "z"
+
+        logger.debug(self.axis)
+
+    def get_axis(self):
+        loc_array = [self.selected_object_location.x, self.selected_object_location.y, self.selected_object_location.z]
+        max_index = np.argmax(loc_array)
+        logger.debug(max_index)
+
+        self.obj_axis = self.index_axis_dict[max_index]
+
+    def get_rotation_axis(self):
+        exclusion_list = [self.axis, self.obj_axis]
+
+        if "x" not in exclusion_list:
+            self.rotation_axis = "x"
+        elif "y" not in exclusion_list:
+            self.rotation_axis = "y"
+        else:
+            self.rotation_axis = "z"
+
+    def set_lock(self):
+        for selected_object in self.selected_objects:
+            selected_object.lock_location = (True, True, True)
+            selected_object.lock_rotation = (True, True, True)
+            selected_object.lock_scale = (True, True, True)
 
     def add_base_empty(self):
         bpy.ops.object.empty_add(type='SPHERE', location=(0.0,0.0,0.0), radius=self.size, layers=self.layers)
@@ -84,7 +137,9 @@ class CircularArray():
         self.base_empty.show_x_ray = True
 
     def add_handle_empty(self):
-        bpy.ops.object.empty_add(type='CIRCLE', location=(0.0,0.0,0.0), radius=self.size*2, rotation=self.rotation, layers=self.layers)
+        rotation = self.get_rotation()
+
+        bpy.ops.object.empty_add(type='CIRCLE', location=(0.0,0.0,0.0), radius=self.size*2, rotation=rotation, layers=self.layers)
         self.handle_empty = bpy.context.object
         self.handle_empty.name = "handle_empty"
         self.handle_empty.show_x_ray = True
@@ -93,9 +148,9 @@ class CircularArray():
         self.handle_empty.lock_rotation = self.get_lock_rotation()
         self.handle_empty.lock_scale = (True, True, True)
 
-        bpy.ops.object.constraint_add(type='CHILD_OF')
-
-        child_of_const = self.handle_empty.constraints.values()[0]
+        # bpy.ops.object.constraint_add(type='CHILD_OF')
+        # child_of_const = self.handle_empty.constraints.values()[0]
+        child_of_const = self.handle_empty.constraints.new(type='CHILD_OF')
         child_of_const.target = self.base_empty
 
     def add_object_empty(self):
@@ -108,44 +163,46 @@ class CircularArray():
         self.object_empty.lock_rotation = (True, True, True)
         self.object_empty.lock_scale = (True, True, True)
 
-        bpy.ops.object.constraint_add(type='CHILD_OF')
-
-        child_of_const = self.object_empty.constraints.values()[0]
+        # bpy.ops.object.constraint_add(type='CHILD_OF')
+        # child_of_const = self.object_empty.constraints.values()[0]
+        child_of_const = self.object_empty.constraints.new(type='CHILD_OF')
         child_of_const.target = self.base_empty
 
-    def add_constratint(self):
-        self.select_object(self.selected_object)
+    def add_rotation_empty(self):
+        bpy.ops.object.empty_add(type='CIRCLE', radius=self.size*2, location=(0.0,0.0,0.0), layers=self.layers)
+        self.rotation_empty = bpy.context.object
+        self.rotation_empty.name = "rotation_empty"
+        self.rotation_empty.show_x_ray = True
 
-        self.selected_object.location = (0.0, 0.0, 0.0)
+        self.rotation_empty.lock_location = (True, True, True)
+        self.rotation_empty.lock_rotation = self.get_lock(self.rotation_axis)
+        self.rotation_empty.lock_scale = (True, True, True)
 
-        bpy.ops.object.constraint_add(type='CHILD_OF')
-
-        child_of_const = self.selected_object.constraints.values()[0]
+        # bpy.ops.object.constraint_add(type='CHILD_OF')
+        # child_of_const = self.rotation_empty.constraints.values()[0]
+        child_of_const = self.rotation_empty.constraints.new(type='CHILD_OF')
         child_of_const.target = self.object_empty
-
-        bpy.ops.object.modifier_add(type='ARRAY')
-
-        self.array_modifier = self.selected_object.modifiers.values()[0]
-        self.array_modifier.use_relative_offset = False
-        self.array_modifier.relative_offset_displace = (0.0, 0.0, 0.0)
-        self.array_modifier.use_object_offset = True
-        self.array_modifier.offset_object = self.pivot_empty
 
     def add_pivot_empty(self):
         bpy.ops.object.empty_add(type='PLAIN_AXES', radius=self.size, location=self.selected_object_location, layers=self.layers)
         self.pivot_empty = bpy.context.object
         self.pivot_empty.name = "pivot_empty"
         self.pivot_empty.show_x_ray = True
+        # self.pivot_empty.hide_select = True
 
         self.pivot_empty.lock_location = (True, True, True)
         self.pivot_empty.lock_rotation = (True, True, True)
         self.pivot_empty.lock_scale = (True, True, True)
 
-        bpy.ops.object.constraint_add(type='CHILD_OF')
-
-        child_of_const = self.pivot_empty.constraints.values()[0]
+        # bpy.ops.object.constraint_add(type='CHILD_OF')
+        # child_of_const = self.pivot_empty.constraints.values()[0]
+        child_of_const = self.pivot_empty.constraints.new(type='CHILD_OF')
         child_of_const.target = self.handle_empty
 
+        self.add_location_driver()
+        self.add_rotation_driver()
+
+    def add_location_driver(self):
         fcurve = self.pivot_empty.driver_add("location", self.get_location_index())
         driver = fcurve.driver
         driver_value = driver.variables.new()
@@ -154,8 +211,36 @@ class CircularArray():
         driver_target.data_path = "location[" + str(self.get_location_index())  + "]"
         driver.expression = driver_value.name
 
-    def add_array_driver(self):
-        fcurve = self.selected_object.driver_add("modifiers[\"" + self.array_modifier.name + "\"].count")
+    def add_rotation_driver(self):
+        fcurve = self.pivot_empty.driver_add("rotation_euler", self.axis_index_dict[self.rotation_axis])
+        driver = fcurve.driver
+        driver_value = driver.variables.new()
+        driver_target = driver_value.targets.values()[0]
+        driver_target.id = self.rotation_empty
+        driver_target.data_path = "rotation_euler[" + str(self.axis_index_dict[self.rotation_axis])  + "]"
+        driver.expression = driver_value.name
+
+    def add_constratint(self):
+        # self.select_object(self.selected_object)
+
+        for selected_object in self.selected_objects:
+            selected_object.location = (0.0, 0.0, 0.0)
+
+            # bpy.ops.object.constraint_add(type='CHILD_OF')
+            # child_of_const = self.selected_object.constraints.values()[0]
+            child_of_const = selected_object.constraints.new(type='CHILD_OF')
+            child_of_const.target = self.rotation_empty
+
+            array_modifier = selected_object.modifiers.new("Array", type='ARRAY')
+            array_modifier.use_relative_offset = False
+            array_modifier.relative_offset_displace = (0.0, 0.0, 0.0)
+            array_modifier.use_object_offset = True
+            array_modifier.offset_object = self.pivot_empty
+
+            self.add_array_driver(selected_object, array_modifier)
+
+    def add_array_driver(self, obj, array_modifier):
+        fcurve = obj.driver_add("modifiers[\"" + array_modifier.name + "\"].count")
         driver = fcurve.driver
         driver_value = driver.variables.new()
         driver_target = driver_value.targets.values()[0]
@@ -193,6 +278,11 @@ class CircularArray():
         else:
             return (True, True, False)
 
+    def get_lock(self, axis):
+        lock = [True, True, True]
+        lock[self.axis_index_dict[axis]] = False
+        return tuple(lock)
+
     def get_axis_index(self):
         if self.axis == "x":
             return 0
@@ -208,7 +298,6 @@ class CircularArray():
             return 1
         else:
             return 2
-
 
     def select_object(self, obj):
         bpy.ops.object.select_all(action='DESELECT')
